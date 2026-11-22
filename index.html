@@ -467,6 +467,24 @@
                     <h3 class="text-sm font-bold text-purple-400 border-b border-slate-800 pb-2">৬. ইউজার রিভিউ অ্যাপ্রুভাল</h3>
                     <div id="admin-reviews-list" class="space-y-2.5"></div>
                 </div>
+
+                <!-- 7. Change Admin Password -->
+                <div class="card-glass p-4 rounded-2xl space-y-3 border border-amber-500/40">
+                    <h3 class="text-sm font-bold text-amber-400 border-b border-slate-800 pb-2 flex items-center gap-1.5">
+                        <i class="fas fa-key"></i> ৭. অ্যাডমিন পাসওয়ার্ড পরিবর্তন করুন
+                    </h3>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">নতুন অ্যাডমিন পাসওয়ার্ড লিখুন</label>
+                        <input type="password" id="admin-new-password-input" placeholder="কমপক্ষে ৪ অক্ষরের নতুন পাসওয়ার্ড দিন" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">নতুন পাসওয়ার্ডটি আবার লিখুন (Confirm)</label>
+                        <input type="password" id="admin-confirm-password-input" placeholder="নতুন পাসওয়ার্ড পুনরায় লিখুন" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+                    </div>
+                    <button type="button" onclick="changeAdminPassword()" class="w-full gold-gradient text-slate-950 font-extrabold py-2.5 rounded-xl text-xs cursor-pointer">
+                        পাসওয়ার্ড আপডেট করুন
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -507,29 +525,9 @@
                 upcoming_paper_img: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
                 admin_password: "admin123"
             },
-            winningPapers: [
-                {
-                    id: 1,
-                    game_date: "งวดวันที่ 16 Nov 2026",
-                    title: "3UP Direct Set & Pair Win",
-                    img_url: "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=800&q=80"
-                },
-                {
-                    id: 2,
-                    game_date: "งวดวันที่ 01 Nov 2026",
-                    title: "Full Touch & Down Total Win",
-                    img_url: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=800&q=80"
-                }
-            ],
+            winningPapers: [],
             payments: [],
-            reviews: [
-                {
-                    id: 101,
-                    name: "রফিকুল ইসলাম (সৌদি প্রবাসী)",
-                    comment: "আলহামদুলিল্লাহ শামিম ভাইয়ের দেওয়া পেপার থেকে গত গেমে ভালো সফলতা পেয়েছি। খুবই বিশ্বস্ত সার্ভিস।",
-                    approved: true
-                }
-            ]
+            reviews: []
         };
 
         let appState = JSON.parse(JSON.stringify(defaultState));
@@ -573,7 +571,9 @@
                     supabaseClient.from('user_reviews').select('*').order('id', { ascending: false })
                 ]);
 
-                if (settingsRes.data) appState.settings = settingsRes.data;
+                if (settingsRes.data) {
+                    appState.settings = { ...appState.settings, ...settingsRes.data };
+                }
                 if (!papersRes.error && Array.isArray(papersRes.data)) appState.winningPapers = papersRes.data;
                 if (!paymentsRes.error && Array.isArray(paymentsRes.data)) appState.payments = paymentsRes.data;
                 if (!reviewsRes.error && Array.isArray(reviewsRes.data)) appState.reviews = reviewsRes.data;
@@ -696,7 +696,7 @@
             }
 
             const winGrid = document.getElementById('winning-papers-grid');
-            winGrid.innerHTML = appState.winningPapers.map(paper => `
+            winGrid.innerHTML = appState.winningPapers.length ? appState.winningPapers.map(paper => `
                 <div class="card-glass rounded-2xl overflow-hidden border border-slate-700/80 shadow-lg">
                     <div class="bg-slate-950 px-3.5 py-2 border-b border-slate-800 flex items-center justify-between">
                         <span class="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
@@ -712,7 +712,7 @@
                         <i class="fas fa-trophy text-amber-400 text-xs"></i>
                     </div>
                 </div>
-            `).join('');
+            `).join('') : `<div class="card-glass rounded-2xl p-5 text-center text-xs text-slate-400">এখনো কোনো পূর্ববর্তী উইন পেপার প্রকাশ করা হয়নি।</div>`;
 
             const reviewsList = document.getElementById('approved-reviews-list');
             const approvedReviews = appState.reviews.filter(r => r.approved);
@@ -852,7 +852,11 @@
             isMutating = true;
             Object.assign(appState.settings, patch);
             if (supabaseClient) {
-                await supabaseClient.from('site_settings').update(patch).eq('id', 1);
+                const { error } = await supabaseClient.from('site_settings').update(patch).eq('id', 1);
+                if (error) {
+                    isMutating = false;
+                    throw error;
+                }
                 await loadAllData(true);
             } else {
                 localStorage.setItem('thai_lottery_mobile_v2', JSON.stringify(appState));
@@ -861,45 +865,86 @@
             isMutating = false;
         }
 
+        async function changeAdminPassword() {
+            const newPassInput = document.getElementById('admin-new-password-input');
+            const confirmPassInput = document.getElementById('admin-confirm-password-input');
+            const newPass = newPassInput.value.trim();
+            const confirmPass = confirmPassInput.value.trim();
+
+            if (!newPass || newPass.length < 4) {
+                alert('অনুগ্রহ করে অন্তত ৪ অক্ষরের নতুন পাসওয়ার্ড দিন।');
+                return;
+            }
+            if (newPass !== confirmPass) {
+                alert('দুটি পাসওয়ার্ড মেলেনি! অনুগ্রহ করে একই পাসওয়ার্ড লিখুন।');
+                return;
+            }
+
+            try {
+                await updateSiteSettings({ admin_password: newPass });
+                newPassInput.value = '';
+                confirmPassInput.value = '';
+                alert('অ্যাডমিন পাসওয়ার্ড সফলভাবে আপডেট হয়েছে! পরবর্তী লগইনে নতুন পাসওয়ার্ড ব্যবহার করুন।');
+            } catch (err) {
+                alert('পাসওয়ার্ড আপডেট করতে সমস্যা হয়েছে: ' + err.message);
+            }
+        }
+
         async function saveUpcomingMeta() {
-            await updateSiteSettings({
-                upcoming_game_date: document.getElementById('admin-upcoming-date-input').value
-            });
-            alert('VIP পেপারের তারিখ আপডেট হয়েছে!');
+            try {
+                await updateSiteSettings({
+                    upcoming_game_date: document.getElementById('admin-upcoming-date-input').value
+                });
+                alert('VIP পেপারের তারিখ আপডেট হয়েছে!');
+            } catch (err) {
+                alert('আপডেট এরর: ' + err.message);
+            }
         }
 
         async function uploadUpcomingPaper(e) {
             const file = e.target.files[0];
             if (!file) return;
-            const compressedDataUrl = await compressImage(file);
-            await updateSiteSettings({ upcoming_paper_img: compressedDataUrl });
-            alert('নতুন VIP পেপার আপলোড হয়েছে!');
+            try {
+                const compressedDataUrl = await compressImage(file);
+                await updateSiteSettings({ upcoming_paper_img: compressedDataUrl });
+                alert('নতুন VIP পেপার আপলোড হয়েছে!');
+            } catch (err) {
+                alert('আপলোড এরর: ' + err.message);
+            }
         }
 
         async function saveGeneralSettings() {
             const dtVal = document.getElementById('admin-countdown-input').value;
-            await updateSiteSettings({
-                notice_text: document.getElementById('admin-notice-input').value,
-                site_title: document.getElementById('admin-title-input').value,
-                thai_subtitle: document.getElementById('admin-subtitle-input').value,
-                publisher_name: document.getElementById('admin-publisher-input').value,
-                countdown_target: new Date(dtVal).toISOString(),
-                price_sar: document.getElementById('admin-sar-input').value,
-                price_bdt: document.getElementById('admin-bdt-input').value,
-                bkash_num: document.getElementById('admin-bkash-input').value,
-                nagad_num: document.getElementById('admin-nagad-input').value
-            });
-            startCountdown();
-            alert('সব সেটিংস সেভ হয়েছে!');
+            try {
+                await updateSiteSettings({
+                    notice_text: document.getElementById('admin-notice-input').value,
+                    site_title: document.getElementById('admin-title-input').value,
+                    thai_subtitle: document.getElementById('admin-subtitle-input').value,
+                    publisher_name: document.getElementById('admin-publisher-input').value,
+                    countdown_target: new Date(dtVal).toISOString(),
+                    price_sar: document.getElementById('admin-sar-input').value,
+                    price_bdt: document.getElementById('admin-bdt-input').value,
+                    bkash_num: document.getElementById('admin-bkash-input').value,
+                    nagad_num: document.getElementById('admin-nagad-input').value
+                });
+                startCountdown();
+                alert('সব সেটিংস সেভ হয়েছে!');
+            } catch (err) {
+                alert('সেভ করতে সমস্যা হয়েছে: ' + err.message);
+            }
         }
 
         async function saveLinksSettings() {
-            await updateSiteSettings({
-                imo_link: document.getElementById('admin-imo-input').value,
-                fb_link: document.getElementById('admin-fb-input').value,
-                official_link: document.getElementById('admin-official-input').value
-            });
-            alert('লিংকসমূহ আপডেট হয়েছে!');
+            try {
+                await updateSiteSettings({
+                    imo_link: document.getElementById('admin-imo-input').value,
+                    fb_link: document.getElementById('admin-fb-input').value,
+                    official_link: document.getElementById('admin-official-input').value
+                });
+                alert('লিংকসমূহ আপডেট হয়েছে!');
+            } catch (err) {
+                alert('লিংক আপডেট এরর: ' + err.message);
+            }
         }
 
         async function addWinningPaper(e) {
@@ -940,12 +985,10 @@
             alert('উইন পেপার পাবলিশ হয়েছে!');
         }
 
-        // FIXED DELETE FUNCTION FOR WINNING PAPERS
         async function deleteWinningPaper(id) {
             isMutating = true;
             const targetId = isNaN(Number(id)) ? id : Number(id);
 
-            // Optimistically remove from UI immediately
             appState.winningPapers = appState.winningPapers.filter(
                 p => String(p.id) !== String(id) && Number(p.id) !== targetId
             );
